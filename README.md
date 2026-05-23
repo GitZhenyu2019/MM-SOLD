@@ -38,9 +38,8 @@ MM-SOLD Code/
 │   ├── data_utils.py
 │   └── ...
 ├── ablation_studies/              # Fig. 9, 10: ablation studies
-│   ├── Langevin_steps/
-│   └── particle_nums/
-└── images.zip                     # Generated figures for the paper
+    ├── Langevin_steps/
+    └── particle_nums/
 ```
 
 ## Requirements
