@@ -1,6 +1,6 @@
 # Training-Free Generative Sampling via Moment-Matched Score Smoothing
 
-Official code for the paper **"Training-Free Generative Sampling via Moment-Matched Score Smoothing"**, submitted to NeurIPS 2026.
+Official code for the paper **"Training-Free Generative Sampling via Moment-Matched Score Smoothing"**.
 
 ## Overview
 
