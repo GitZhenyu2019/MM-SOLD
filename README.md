@@ -72,7 +72,7 @@ pip install -U "jax[cuda12]"
 
 ## Dataset Download
 
-The original datasets are too large to include in the supplementary material. Please download them from the links below.
+Please download the original datasets from the links below.
 
 ### Handwritten Digits Dataset
 
