@@ -2,7 +2,7 @@
 vae_model.py
 ============
 ResNet-VAE architecture, loss, training step, encode/decode utilities,
-and checkpoint save/load.
+and checkpoint save/load. 
 """
 import functools, os, pickle
 import numpy as np

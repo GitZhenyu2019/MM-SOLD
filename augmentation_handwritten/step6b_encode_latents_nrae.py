@@ -1,8 +1,8 @@
 """
 step6b_encode_latents_nrae.py
 ==============================
-Encode train / val / test images with the trained NRAE, then run MM-SOLD
-in latent space to produce augmented latents.
+Encode train / val / test images with the trained NRAE, then run the
+manifold LDS sampler in latent space to produce augmented latents.
 """
 
 import argparse, os, sys, time

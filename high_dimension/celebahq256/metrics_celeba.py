@@ -15,8 +15,6 @@ from sklearn.neighbors import NearestNeighbors
 def build_inception_extractor(device=None):
     """
     Build the clean-fid InceptionV3 feature extractor.
-
-    Returns (model, device) where model : PyTorch nn.Module, eval mode.
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -34,16 +32,13 @@ def extract_inception_features(
 ) -> np.ndarray:
     """
     Extract 2048-dim InceptionV3 pool3 features.
-
-    images_np : (N, H, W, 3) float32 [0, 1]  RGB images
-    Returns   : (N, 2048) float32
     """
     feats = []
     N = len(images_np)
     for i in range(0, N, batch_size):
         batch = images_np[i: i + batch_size]                 # (B, H, W, 3)
         # (B, 3, H, W) float32 [0, 1]
-        t = torch.from_numpy(batch.transpose(0, 3, 1, 2)).float().to(device)
+        t = torch.from_numpy(batch.transpose(0, 3, 1, 2)).float().to(device) * 255.0
         t = F.interpolate(t, size=(299, 299), mode="bilinear", align_corners=False)
         with torch.no_grad():
             f = model(t)                                      # (B, 2048)
@@ -69,6 +64,7 @@ def compute_fid_from_features(
     product = sigma_r @ sigma_g
     covmean, _ = scipy.linalg.sqrtm(product, disp=False)
     if np.iscomplexobj(covmean):
+        # Numerical noise: imaginary parts should be negligible
         covmean = covmean.real
 
     fid = (float(np.dot(diff, diff))

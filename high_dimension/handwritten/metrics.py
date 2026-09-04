@@ -14,6 +14,11 @@ from classifier_model import ClassResBlock, load_params as clf_load_params
 # ─── CNN feature extractor ────────────────────────────────────────────────────
 
 class CNNFeatureExtractor(nn.Module):
+    """
+    Mirrors CNNClassifier exactly up to (and including) Dense(256)+Swish.
+    The final Dense(num_classes) layer is created (to keep parameter trees
+    identical to the checkpoint) but its output is discarded.
+    """
     num_classes: int = 10
     base_ch:     int = 32
 
@@ -150,15 +155,16 @@ def compute_recall(
 
 # ─── DupRate: memorisation / duplication rate ────────────────────────────────
 
-def compute_tau(Z_train: np.ndarray) -> float:
+def compute_tau(Z_train: np.ndarray, percentile: float = 5) -> float:
     """
-    τ = 5th percentile of within-training-set nearest-neighbour distances.
+    τ = p-th percentile of within-training-set nearest-neighbour distances.
+    Computed once from the training latents and reused across all generated sets.
     """
     nn = NearestNeighbors(n_neighbors=2, algorithm="auto")
     nn.fit(Z_train)
     dists, _ = nn.kneighbors(Z_train)   # (N_train, 2)
     nn_dists  = dists[:, 1]             # skip self (index 0)
-    return float(np.percentile(nn_dists, 5))
+    return float(np.percentile(nn_dists, percentile))
 
 
 def compute_duprate(

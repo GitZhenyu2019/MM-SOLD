@@ -2,10 +2,6 @@
 run_ablation.py
 ===============
 Ablation study: effect of Langevin step count and step size on MM-SOLD sample quality.
-
-Distribution : 2-D checkerboard (same as low_dimension experiment)
-Fixed params : M=8, σ=0.2, σ_GMM=0.1, N_TARGET=5000, N_TRAIN=500, N_GEN=5000
-Grid search  : n_steps ∈ N_STEPS_LIST,  step_size ∈ STEP_SIZE_LIST
 """
 
 import os
@@ -291,10 +287,6 @@ def run_grid_search(X_train: np.ndarray,
 # ─────────────────────────────────────────────
 
 def plot_scatter_all(res: dict, X_train: np.ndarray):
-    """
-    One figure per (n_steps, step_size) combination.
-    Each figure: MM-SOLD samples (blue) vs training data (red).
-    """
     scatter_dir = os.path.join(FIGURES_DIR, "scatter")
     os.makedirs(scatter_dir, exist_ok=True)
 
@@ -345,12 +337,6 @@ def _line_colors(n: int):
 
 
 def plot_line_vs_steps(res: dict, ref_sw2_train: float = None):
-    """
-    Two figures (W2-target, W2-train):
-    x-axis = n_steps; one line per step_size value.
-    ref_sw2_train: SW2(X_target, X_train) reference baseline drawn as dashed line
-                   on the W2-to-train figure.
-    """
     n_steps_list   = res["n_steps_list"]
     step_size_list = res["step_size_list"]
     colors         = _line_colors(len(step_size_list))
@@ -382,12 +368,6 @@ def plot_line_vs_steps(res: dict, ref_sw2_train: float = None):
 
 
 def plot_line_vs_stepsize(res: dict, ref_sw2_train: float = None):
-    """
-    Two figures (W2-target, W2-train):
-    x-axis = step_size; one line per n_steps value.
-    ref_sw2_train: SW2(X_target, X_train) reference baseline drawn as dashed line
-                   on the W2-to-train figure.
-    """
     n_steps_list   = res["n_steps_list"]
     step_size_list = res["step_size_list"]
     colors         = _line_colors(len(n_steps_list))
@@ -423,9 +403,6 @@ def plot_line_vs_stepsize(res: dict, ref_sw2_train: float = None):
 # ─────────────────────────────────────────────
 
 def plot_heatmaps(res: dict):
-    """
-    Two heatmaps: W2-to-target and W2-to-train.
-    """
     n_steps_list   = res["n_steps_list"]
     step_size_list = res["step_size_list"]
 

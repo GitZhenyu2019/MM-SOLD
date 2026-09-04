@@ -27,10 +27,8 @@ class LatentMLP(nn.Module):
     def __call__(self, x):   # (B, latent_dim)
         x = nn.Dense(self.hidden_dim)(x)
         x = nn.gelu(x)
-        x=nn.LayerNorm(x)
         x = nn.Dense(self.hidden_dim // 2)(x)
         x = nn.gelu(x)
-        x=nn.LayerNorm(x)
         return nn.Dense(self.num_classes)(x)
 
 

@@ -1,7 +1,8 @@
 """
 step4b_generate_augmented_nrae.py
 ==================================
-Use the trained NRAE to generate augmented images via the MM-SOLD.
+Use the trained NRAE to generate augmented images via the
+overdamped-stationary manifold LDS sampler (MM-SOLD).
 """
 
 import argparse, os, sys, time

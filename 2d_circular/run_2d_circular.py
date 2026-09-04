@@ -1,14 +1,8 @@
 """
 run_2d_circular.py
 ==================
-2D circular experiment: compare MM-SOLD moment-matched marginal vs. plain on a synthetic unit-circle dataset.
-
-Setup
------
-  - N_TRAIN = 12 equally-spaced training points on the unit circle
-  - GMM bandwidth  σ_gmm = 0.1
-  - MC samples     M     = 1000  (antithetic, so 500 unique draws)
-  - Smoothing grid σ ∈ {0.05, 0.10, …, 1.00}  (20 values)
+2D circular experiment: compare MM-SOLD moment-matched marginal vs. plain
+LDS baseline (no moment correction) on a synthetic unit-circle dataset.
 """
 
 import os
@@ -79,13 +73,6 @@ Z_GRID   = np.stack([_XX.ravel(),
 
 @jax.jit
 def _U_batch(Z, X, x_norm2, sigma):
-    """
-    GMM potential U(z) = -logsumexp_i(-||z - xᵢ||² / (2σ²)) for each row of Z.
-    Z       : (B, d)
-    X       : (N, d)  training points
-    x_norm2 : (N,)    precomputed ||xᵢ||²
-    Returns : (B,)
-    """
     z_norm2 = jnp.sum(Z * Z, axis=1)                               # (B,)
     dist2   = z_norm2[:, None] + x_norm2[None, :] - 2.0 * (Z @ X.T)  # (B, N)
     return -logsumexp(-0.5 * dist2 / (sigma * sigma), axis=1)      # (B,)
@@ -93,12 +80,6 @@ def _U_batch(Z, X, x_norm2, sigma):
 
 @functools.partial(jax.jit, static_argnames=("M_mc",))
 def _Vc_mc_batch(key, Z, X, x_norm2, sigma, s, M_mc):
-    """
-    LDS-smoothed potential V(z) = E_ε[U(z + s·ε)] estimated via antithetic MC.
-    Antithetic: draw M_mc//2 vectors per point, concatenate with negatives.
-    Z       : (B, d)
-    Returns : (B,)
-    """
     B, d  = Z.shape
     half  = M_mc // 2
     eps_h = jax.random.normal(key, (B, half, d), dtype=Z.dtype)  # per-point
@@ -124,9 +105,6 @@ def eval_V_batched(key, Z_jax, X_jax, x_norm2, sigma_gmm, s, M_mc, batch_size):
 
 def estimate_mm_params(key, X_jax, x_norm2, sigma_gmm, sigma,
                        X_est_jax=None):
-    """
-    Compute MM-SOLD correction parameters for a single σ value.
-    """
     # Use dense estimation points if provided, else fall back to training points
     X_ref_jax = X_est_jax if X_est_jax is not None else X_jax
     X_np = np.array(X_ref_jax)
@@ -138,6 +116,8 @@ def estimate_mm_params(key, X_jax, x_norm2, sigma_gmm, sigma,
     Sigma_x   = (Xc.T @ Xc) / n                            # (d,d)
     Sigma_star = (sigma_gmm ** 2) * np.eye(d) + Sigma_x   # (d,d)
 
+    # Smoothed scores at estimation points: g_σ(xᵢ), shape (n, d)
+    # gradU_LDS_mc_stationary signature: (key, Z, X, x_norm2, sigma, s, M, shared_noise)
     G = np.array(gradU_LDS_mc_stationary(
         key, X_ref_jax, X_jax, x_norm2,
         sigma_gmm, sigma, M,
@@ -168,12 +148,6 @@ def estimate_mm_params(key, X_jax, x_norm2, sigma_gmm, sigma,
 # ─── Energy functions ─────────────────────────────────────────────────────────
 
 def energy_mm(V, Z, lambda_vec, Lambda_mat, mu_star):
-    """
-    E*(z) = V(z) + λᵀ·z + ½(z - μ*)ᵀ·Λ·(z - μ*)
-    V      : (B,)
-    Z      : (B, d)  numpy array
-    Returns: (B,)
-    """
     linear = Z @ lambda_vec                                      # (B,)
     diff   = Z - mu_star[None, :]                               # (B, d)
     quad   = 0.5 * np.einsum('bi,ij,bj->b', diff, Lambda_mat, diff)  # (B,)
@@ -181,9 +155,6 @@ def energy_mm(V, Z, lambda_vec, Lambda_mat, mu_star):
 
 
 def log_partition_2d(E_flat, dx):
-    """
-    log Z = log ∫ exp(-E(z)) dz  ≈ logsumexp(-E_grid) + 2·log(dx)
-    """
     return float(scipy_logsumexp(-E_flat) + 2 * np.log(dx))
 
 
@@ -195,14 +166,14 @@ def compute_nll(E_test, log_Z):
 # ─── Plotting ──────────────────────────────────────────────────────────────────
 
 def _plot_single_density(E_2d, X_train, sigma, fig_path):
-    """
-    Save one density figure: blue imshow + red ▲ training pts + dashed unit circle.
-    E_2d : (GRID_N, GRID_N)  energy values on the full GRID_RANGE grid.
-    """
+    # Smooth MC speckle noise (2 grid-cells ≈ 0.033 units, well below ring width)
     dens_2d = gaussian_filter(
         np.exp(-E_2d.astype(np.float64) + E_2d.min()), sigma=2.0
     )
 
+    # Percentile stretch within display region:
+    # vmax = 99th percentile (clips extreme corners), vmin = 1st percentile.
+    # Gives the ring region full colour contrast without being crushed by corners.
     iy = np.abs(_ys) <= PLOT_RANGE
     ix = np.abs(_xs) <= PLOT_RANGE
     dens_display = dens_2d[np.ix_(iy, ix)]
@@ -230,7 +201,6 @@ def _plot_single_density(E_2d, X_train, sigma, fig_path):
 
 def plot_densities(V_grid, lambda_vec, Lambda_mat, mu_star,
                    X_train, sigma, fig_dir):
-    
     V_2d = V_grid.reshape(GRID_N, GRID_N)
 
     E_mm_flat = energy_mm(V_grid, Z_GRID.astype(np.float32),

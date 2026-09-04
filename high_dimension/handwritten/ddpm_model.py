@@ -149,7 +149,7 @@ def make_ddpm_state(
 
 # ─── Training step ────────────────────────────────────────────────────────────
 
-@functools.partial(jax.jit, static_argnames=("T", "latent_dim", "hidden", "n_layers"))
+@functools.partial(jax.jit, static_argnames=("T", "latent_dim", "hidden", "n_layers", "snr_gamma"))
 def ddpm_train_step(
     state,
     z0: jnp.ndarray,
@@ -160,9 +160,10 @@ def ddpm_train_step(
     latent_dim: int,
     hidden: int,
     n_layers: int,
+    snr_gamma: float = 0.0,
 ):
     """
-    One DDPM training step (simple noise prediction loss).
+    One DDPM training step (noise prediction loss, optionally min-SNR weighted).
     """
     B = z0.shape[0]
     key, k_t, k_eps = jax.random.split(key, 3)
@@ -175,7 +176,14 @@ def ddpm_train_step(
         eps_hat = MLPDenoiser(
             latent_dim=latent_dim, hidden=hidden, n_layers=n_layers
         ).apply({"params": params}, z_t, t)
-        return jnp.mean((eps_hat - eps) ** 2)
+        mse = jnp.mean((eps_hat - eps) ** 2, axis=-1)  # (B,)
+        if snr_gamma > 0.0:
+            # Min-SNR loss weighting (Hang et al. 2023):
+            # w(t) = min(SNR(t), γ) / SNR(t) — upweights high-noise steps.
+            snr = ac_t[:, 0] / jnp.clip(1.0 - ac_t[:, 0], 1e-12)  # (B,)
+            w   = jnp.minimum(snr, snr_gamma) / snr                  # (B,) ∈ (0,1]
+            return jnp.mean(w * mse)
+        return jnp.mean(mse)
 
     loss, grads = jax.value_and_grad(loss_fn)(state.params)
     return state.apply_gradients(grads=grads), loss, key
@@ -195,9 +203,10 @@ def ddim_sample(
     T: int = 1000,
     ddim_steps: int = 100,
     clip_x0: float = 15.0,
+    eta: float = 0.0,
 ) -> np.ndarray:
     """
-    DDIM deterministic sampling (eta=0).
+    DDIM / stochastic-DDIM sampling.
     """
     model = MLPDenoiser(latent_dim=latent_dim, hidden=hidden, n_layers=n_layers)
     ac    = np.array(alphas_cumprod, dtype=np.float64)   # (T+1,)
@@ -220,7 +229,17 @@ def ddim_sample(
         if i < ddim_steps - 1:
             t_next  = int(step_idx[i + 1])
             ac_next = float(ac[t_next + 1])
-            z = jnp.sqrt(ac_next) * x0_pred + jnp.sqrt(1.0 - ac_next) * eps_hat
+            # sigma_t: stochastic noise scale
+            sigma_t = eta * float(np.sqrt(
+                max(0.0, (1.0 - ac_next) / max(1e-12, 1.0 - ac_t) * (1.0 - ac_t / max(1e-12, ac_next)))
+            ))
+            dir_xt  = float(np.sqrt(max(0.0, 1.0 - ac_next - sigma_t ** 2))) * eps_hat
+            if sigma_t > 0.0:
+                rng, k_noise = jax.random.split(rng)
+                noise = jax.random.normal(k_noise, z.shape, dtype=jnp.float32)
+            else:
+                noise = jnp.zeros_like(z)
+            z = float(np.sqrt(ac_next)) * x0_pred + dir_xt + sigma_t * noise
         else:
             z = x0_pred
 

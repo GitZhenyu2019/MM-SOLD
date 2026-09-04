@@ -2,7 +2,7 @@
 whitening_utils.py
 ==================
 Whitening / unwhitening in the VAE latent space, and nearest-center
-distance computation.
+distance computation. 
 """
 import functools
 import numpy as np
@@ -24,9 +24,6 @@ def symmetric_matrix_sqrt_and_invsqrt(S: jnp.ndarray,
                                        k: int = 30):
     """
     Partial whitening via eigendecomposition.
-
-    Caps the top-k eigenvalues at the (k+1)-th value, then rescales so
-    the (k+1)-th eigenvalue becomes 1.  
     """
     evals, evecs = jnp.linalg.eigh(S)       # ascending
     evals = jnp.maximum(evals, 0.0) + eps

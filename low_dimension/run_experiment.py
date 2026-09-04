@@ -41,16 +41,13 @@ MM_H          = 5e-4          # MM-SOLD: Langevin step size
 M_LIST        = [2, 4, 8]
 SIGMA_LIST    = [0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.1, 0.2]
 
-#M_LIST        = [2]
-#SIGMA_LIST    = [0.02]
-
 # Built-in 2-D synthetic distributions (always available without mesh files)
 DATASETS_2D   = ["checkerboard", "spirals"]
 
 def _is_3d(name: str) -> bool:
     return name not in DATASETS_2D
 
-SEED          = 0
+SEED = 0
 
 # ── 3-D point-cloud render camera ──────
 PS_CAMERA_POS        = (-2.5, 1.8, -2.0)  # flat objects (car, airplane…): oblique top-front-left
@@ -61,7 +58,7 @@ _SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
 RESULTS_DIR   = os.path.join(_SCRIPT_DIR, "results")
 FIGURES_DIR   = os.path.join(_SCRIPT_DIR, "figures")
 
-MODELNET40_DIR = os.environ.get("MODELNET40_DIR", "/path/to/datasets/ModelNet40")
+MODELNET40_DIR = "/path/to/datasets/ModelNet40"
 
 # ─────────────────────────────────────────────
 # 1.  Target distributions
@@ -965,7 +962,7 @@ def _render_polyscope_3d(pts_ref: np.ndarray,
                          ref_is_train: bool = False) -> bool:
     """
     Render two 3-D point clouds with Polyscope (sphere rendering + ground
-    shadow) and save to *fname* (PNG).  
+    shadow) and save to *fname* (PNG). 
     """
     # Radius constants (relative to bounding-box scale ~1 after normalisation)
     _R_ALGO  = 0.003   # σ-CFDM and MM-SOLD samples: same small size
@@ -1032,6 +1029,12 @@ def plot_scatter_top5(all_results: dict,
                       X_trains: dict,
                       top5_pct: list,
                       top5_abs: list):
+    """
+    For each of the top-5 (M, σ) from the % change and abs change heatmaps,
+    produce two figures:
+      A) σ-CFDM (red) vs MM-SOLD (blue) samples across all 5 datasets
+      B) Training data (red) vs MM-SOLD (blue) samples across all 5 datasets
+    """
     n_ds   = len(all_results)
     ncols  = min(n_ds, 3)
     nrows  = (n_ds + ncols - 1) // ncols
@@ -1084,6 +1087,11 @@ def plot_scatter_top5(all_results: dict,
 # ── 7f.  Scatter plots for ALL configurations  ───────────────────────────────
 
 def plot_scatter_all(all_results: dict, X_trains: dict):
+    """
+    For every (M, σ) combination, produce two figures per dataset:
+      A) σ-CFDM (red) vs MM-SOLD (blue) samples
+      B) Training data (red) vs MM-SOLD (blue) samples
+    """
     for dname, res in all_results.items():
         fdir  = _fig_dir(dname)
         d     = X_trains[dname].shape[1]

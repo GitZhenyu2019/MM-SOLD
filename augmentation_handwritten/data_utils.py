@@ -20,12 +20,8 @@ from jax.scipy.ndimage import map_coordinates
 # ============================================================
 
 def load_images_and_digits(images_path: str, writerinfo_path: str):
-    """Load handwritten digit images and digit labels from .npy files.
-
-    Returns
-    -------
-    images : np.ndarray  shape (N, H, W), uint8 or float
-    digits : np.ndarray  shape (N,), int32
+    """
+    Load handwritten digit images and digit labels from .npy files.
     """
     images = np.load(images_path, allow_pickle=True)
     writerinfo = np.load(writerinfo_path, allow_pickle=True)
@@ -156,7 +152,7 @@ def select_train_val_test_split(
 
 
 # ============================================================
-# 3. Geometric preprocessing
+# 3. Geometric preprocessing (JAX, same as notebook)
 # ============================================================
 
 def _wrap_to_180(theta_deg):
@@ -295,18 +291,8 @@ def full_preprocess_pipeline(
     target_rms: float = None,
     rms_scale: float = 0.82,
 ):
-    """Full pipeline: numpy (N,H,W) uint8/float -> (N,64,64) float32 ink=1 on device.
-
-    Steps:
-      1. to_float01
-      2. geometric normalization (centroid + PCA-align + scale)
-      3. resize to 64x64
-      4. invert (white bg -> black bg, ink=1)
-
-    Returns
-    -------
-    images_64 : jnp.ndarray  (N, 64, 64) float32, ink=1
-    target_rms : float
+    """
+    Full pipeline: numpy (N,H,W) uint8/float -> (N,64,64) float32 ink=1 on device.
     """
     images_f = to_float01_np(images_np)
     images_jax = jnp.asarray(images_f)

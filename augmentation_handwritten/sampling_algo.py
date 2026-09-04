@@ -254,10 +254,6 @@ def sample_class_overdamped_manifold(
     return z_sampled_w, Xw
 
 
-# ============================================================
-# 6. KNN+remainder score estimator
-# ============================================================
-
 @functools.partial(jax.jit, static_argnames=("knn_K", "knn_L", "Nsamp", "antithetic"))
 def _knn_rem_score_batched(
     xs,           # (B, d)  query particles

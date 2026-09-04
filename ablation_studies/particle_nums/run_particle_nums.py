@@ -42,7 +42,7 @@ from classifier_model import load_params as clf_load
 from metrics          import extract_features, compute_tau, compute_duprate
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-_SERVER_ROOT = os.environ.get("DATA_ROOT", "/path/to/datasets/RP1/handwritten")
+_SERVER_ROOT = "/path/to/datasets/handwritten"
 LATENT_DIR   = os.path.join(_SERVER_ROOT, "latents")
 DATA_DIR     = os.path.join(_SERVER_ROOT, "data")
 NRAE_CKPT    = os.path.join(AUG_DIR, "checkpoints", "nrae_best.pkl")
@@ -65,7 +65,7 @@ N_RUNS          = 5         # independent runs per configuration
 # Experiment A
 N_TRAIN_A    = 1000
 N_GEN_LIST_A = [101, 200, 300, 500, 800, 1000, 1500, 2000]
-N_GEN_TIMING = 101          # N_GENERATE used for CPU timing
+N_GEN_TIMING = 100          # N_GENERATE used for CPU timing
 
 # Experiment B
 N_GEN_B         = 500

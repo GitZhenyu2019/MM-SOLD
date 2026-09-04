@@ -279,14 +279,6 @@ def run_cnn_grid_search(
     """
     Grid search over weight_decay for the CNN classifier.
     Model selected by best validation accuracy.
-
-    Returns
-    -------
-    best_val_acc  : float  (%)
-    best_test_acc : None   (caller must evaluate on test set)
-    best_wd       : float
-    best_epoch    : int
-    best_params   : pytree
     """
     if wd_grid is None:
         wd_grid = [1e-4, 1e-3, 1e-2, 5e-2]

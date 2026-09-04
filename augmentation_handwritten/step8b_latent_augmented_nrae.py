@@ -2,9 +2,8 @@
 step8b_latent_augmented_nrae.py
 ================================
 Train MLP classifier on AUGMENTED NRAE latent vectors
-(original Z_train + MM-SOLD generated latents from step6b).
+(original Z_train + manifold-LDS-generated latents from step6b).
 Grid search over weight_decay; model selected by best validation accuracy.
-Compares final test accuracy with the NRAE baseline from Step 7b.
 """
 
 import argparse, os, sys

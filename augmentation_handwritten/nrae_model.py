@@ -3,25 +3,6 @@ nrae_model.py
 =============
 Nuclear-Norm Regularised Autoencoder (NRAE) for handwritten digit data.
 Follows the σ-CFDM supplementary (Scarvelis & Solomon 2024) in JAX/Flax.
-
-Architecture
-------------
-  Encode :  image (64x64x1)
-            → DCT-II  → keep top-left n_dctxn_dct  → flatten  (n_dct²,)
-            → Enc1  [Dense(enc1_hidden) + ELU]      → (enc1_hidden,)
-            → Enc2  [Dense(latent_dim)]              → latent   (latent_dim,)
-
-  Decode :  latent (latent_dim,)
-            → DecMLP [Dense(dec_hidden)+ELU → Dense(n_dct²)] → (n_dct²,)
-            → iDCT (zero-pad to 64x64, inverse DCT-II)       → (64,64,1)
-            → UNetRefinement                                  → (64,64,1)
-
-Training loss  (same as σ-CFDM paper, η = σ² = 2.0² = 4):
-  L = L_recon + L_reg
-  L_recon = (1/α)·(1/B)·0.5·Σ log_cosh(α·(rec - x_img))   α=100
-  L_reg   = (σ²/σ_fixed²)·(1/B)·0.5·(Σ||Enc1(x+ε)-Enc1(x)||²
-                                      +Σ||Enc2(h+ε)-Enc2(h)||²)
-            with σ_fixed=1e-3, σ=2.0
 """
 
 import functools, math, os, pickle

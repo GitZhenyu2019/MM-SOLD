@@ -26,11 +26,6 @@ def _get_batch_fn(M: int, shared_noise: bool):
 
     @functools.partial(jax.jit, static_argnames=("n_steps",))
     def _run_batch_shared(z, key, X, sigma, n_steps):
-        """
-        z   : (B, d)   initial particles
-        key : PRNGKey  — fresh noise (M, d) drawn at every ODE step
-        X   : (n, d)   whitened training data
-        """
         h = jnp.float32(1.0 / n_steps)
 
         def _step(carry, t_idx):
@@ -61,11 +56,6 @@ def _get_batch_fn(M: int, shared_noise: bool):
 
     @functools.partial(jax.jit, static_argnames=("n_steps",))
     def _run_batch_unshared(z, key, X, sigma, n_steps):
-        """
-        z   : (B, d)   initial particles
-        key : PRNGKey  — fresh noise (B, M, d) drawn at every ODE step
-        X   : (n, d)   whitened training data
-        """
         h = jnp.float32(1.0 / n_steps)
 
         def _step(carry, t_idx):
