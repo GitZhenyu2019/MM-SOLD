@@ -46,19 +46,23 @@ MM-SOLD_code_release/
 │       │                                                  # and posterior-moment-validation table
 │       ├── step7_arcface_metrics.py                       # generation table's ArcFace FID/KID rows
 │       ├── step8_table6_arcface.py                        # moment-validation table's ArcFace rows
-│       ├── step9_metric_floors.py                         # the two reference floors
+│       ├── step9_metric_floors.py                         # optional reference floors (not in the paper)
+│       ├── step10_median_rbf_mmd.py                       # generation table's MMD (image/ArcFace) rows
+│       ├── step11_table6_median_rbf_mmd.py                # moment-validation table's MMD rows
 │       └── metrics_celeba.py, dpm_decode.py, build_fp16_engine.py
 ├── bayes_classifier/               # minimum-ECM classifier for handwritten-digit classification
 │   ├── config.py, common.py
 │   ├── step1_prepare_latents.py
 │   ├── step2_run_ecm.py                       # run twice: --estimator plugin, --estimator dual
 │   ├── step3_run_mlp.py                       # run twice: --mode baseline, --mode augmented
-│   └── step4_summarize_table2.py              # assembles the classification results table
+│   ├── step4_summarize_table2.py              # assembles the classification results table
+│   └── run_table2.sh                          # runs steps 1-4 with the paper's settings
 ├── augmentation_handwritten/       # Shared preprocessing/model code + the NRAE encoder recipe
 │   ├── data_utils.py, nrae_model.py, mlp_model.py, classifier_model.py
 │   ├── whitening_utils.py, sampling_algo.py
 │   ├── vae_model.py                # NOT a separate experiment here -- nrae_model.py imports its
 │   │                                # ResBlock/Downsample/Upsample CNN primitives directly
+│   ├── train_nrae.py               # NRAE of the main digit experiments (validation-loss checkpoint)
 │   └── step1_prepare_data.py, step2_train_classifier_baseline.py,
 │       step3b_train_nrae.py, step3b_test_nrae.py, step3c_train_classifier_nrae_reconstructed.py,
 │       step4b_generate_augmented_nrae.py, step5_train_classifier_augmented.py,
@@ -140,10 +144,22 @@ there first if a script complains about a missing path.
 - **Source**: Beaulac & Rosenthal (2022), *Introducing a new high-resolution handwritten digits data
   set with writer characteristics*, SN Computer Science.
   https://drive.google.com/drive/folders/1f2o1kjXLvcxRgtmMMuDkA2PQ5Zato4Or
-- After downloading, run `augmentation_handwritten/step1_prepare_data.py` with `--raw_img`/`--raw_label`
-  pointing at the raw files, then `augmentation_handwritten/step3b_train_nrae.py` to train the NRAE
-  encoder used throughout (`high_dimension/handwritten/`, `bayes_classifier/`, and this folder's own
-  classification pipeline all load this checkpoint via `RP1_NRAE_CKPT`).
+- After downloading, build the class-balanced 1,000/58/300 split (seed 0) used by every digit
+  experiment, then train the NRAE and the CNN feature extractor on it:
+  ```bash
+  cd augmentation_handwritten
+  python step1_prepare_data.py --images_path <raw>/handwritten_img.npy \
+      --labels_path <raw>/handwritten_label.npy \
+      --n_train_per_class 1000 --n_val_per_class 58 --n_test_per_class 300
+  python train_nrae.py --data_dir ./data --ckpt_dir ./checkpoints_final   # NRAE of the main experiments
+  python step2_train_classifier_baseline.py --data_dir ./data              # CNN feature extractor (KID/Recall)
+  python step3b_train_nrae.py --data_dir ./data                            # earlier NRAE, particle-number ablation only
+  ```
+  Set `RP1_NRAE_CKPT=<...>/augmentation_handwritten/checkpoints_final/nrae_best.pkl` for
+  `high_dimension/handwritten/` and `bayes_classifier/`. `train_nrae.py` keeps the checkpoint with the
+  lowest validation loss; `step3b_train_nrae.py` keeps the lowest training loss and writes
+  `checkpoints/nrae_best.pkl`, which `ablation_studies/particle_nums/` loads. The CNN feature extractor is
+  written to `checkpoints/classifier_baseline_best.pkl` (the default of `RP1_CLF_CKPT`).
 
 ### CelebA-HQ (256×256)
 - **Source**: Karras et al. (2017), *Progressive Growing of GANs*.
@@ -156,7 +172,7 @@ there first if a script complains about a missing path.
   from wherever your lab stores the fixed DiffAE artifacts.
 - Before any decode step, build the TensorRT engine once per GPU architecture:
   `python high_dimension/celebahq256/build_fp16_engine.py`.
-- ArcFace metrics ("FID (ArcFace)"/"KID (ArcFace, ×10³)" rows in both results tables, and the
+- ArcFace metrics ("FID (ArcFace)"/"KID (ArcFace, ×10³)"/"MMD (ArcFace)" rows in both results tables, and the
   reference floors in `step9_metric_floors.py`) need the raw CelebA-HQ pixels for the 3,000 held-out
   test images (and, for the floors, 3,000 random training images) — point `--celeba_dir` at a
   directory with `train/`/`valid/` subfolders of `img_<N>.png` files.
@@ -194,15 +210,12 @@ python step6_generate_figure3.py    # -> main-text representative-sample figure
 ### Handwritten digit classification (ECM classifier)
 ```bash
 cd bayes_classifier
-python step1_prepare_latents.py --proj_k 40
-python step2_run_ecm.py --estimator plugin --proj_k 40 --latents_dir <out>/latents --out <out>/ecm_plugin
-python step2_run_ecm.py --estimator dual   --proj_k 40 --latents_dir <out>/latents --out <out>/ecm_dual
-python step3_run_mlp.py --mode baseline  --proj_k 40 --latents_dir <out>/latents --out <out>/mlp_baseline
-python step3_run_mlp.py --mode augmented --proj_k 40 --shared_cell <out>/ecm_dual/selected_cell.json \
-                         --latents_dir <out>/latents --out <out>/mlp_augmented
-python step4_summarize_table2.py --results_dir <out>    # -> the classification results table
+bash run_table2.sh        # -> the classification results table (results_table2/)
 ```
-Pass `--proj_k 40` explicitly as above (a top-40 PCA subspace).
+The script runs every step with the settings of the paper: the full 100-dimensional NRAE latents
+(`--proj_k 100`), the plug-in classifier's validation grid search, the dual classifier at
+(c_delta, c_sigma) = (0.35, 0.25) with seed 7, the two MLP baselines (the augmented one reuses the dual
+cell), and the summary table.
 
 ### CelebA-HQ generation
 ```bash
@@ -221,7 +234,9 @@ python step5_generate_figure4.py                # -> main-text representative-sa
 python step6_additional_results.py              # -> additional sample grids, heatmaps, moment validation
 python step7_arcface_metrics.py --celeba_dir <path>   # -> generation table's ArcFace rows
 python step8_table6_arcface.py                        # -> moment-validation table's ArcFace rows
-python step9_metric_floors.py --celeba_dir <path>     # -> the two reference floors
+python step9_metric_floors.py --celeba_dir <path>     # -> optional reference floors (not reported in the paper)
+python step10_median_rbf_mmd.py                       # -> generation table's MMD (image) / MMD (ArcFace) rows
+python step11_table6_median_rbf_mmd.py                # -> moment-validation table's MMD rows
 ```
 
 ### Ablation studies

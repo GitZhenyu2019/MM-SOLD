@@ -1,8 +1,27 @@
 """
 run_particle_nums.py
 ====================
-Ablation study: effect of particle number and training set size on
-MM-SOLD vs Kinetic Langevin Dynamics (BAOAB) sample quality.
+Particle-number / training-set-size ablation; the kinetic Langevin baseline is
+integrated by BAOAB, the same integrator as all other kinetic
+samplers in the paper (common/tilting_lion.py::run_chains, splitting="BAOAB").
+
+Implementation notes:
+  1. Kinetic integrator: BAOAB with one force evaluation per step,
+       B  p -= (h/2) F(q)          [F(q) carried over from the previous step]
+       A  q += (h/2) p
+       O  p  = a p + sqrt(1-a^2) xi,   a = exp(-gamma h)
+       A  q += (h/2) p
+       F  <- force at the new q     [fresh smoothing noise]
+       B  p -= (h/2) F
+     (one extra force evaluation at the initial position).
+  2. Outputs go to results_baoab/ and figures_baoab/.
+  3. a_min = delta^2 * lambda_min(delta^-2 I + Lambda_hat) of every plug-in fit
+     is logged and saved (normalizability of the unprojected plug-in target).
+
+Experiment A  Fixed N_TRAIN=1000, varying N_GENERATE in {101,200,300,500,800,1000,1500,2000}
+Experiment B  Fixed N_GENERATE=500, varying N_TRAIN in {50,100,200,500,700,1000}
+
+Set RP1_ABL_SMOKE=1 for a tiny smoke run (fewer configurations and steps).
 """
 
 import os
@@ -43,12 +62,12 @@ from metrics          import extract_features, compute_tau, compute_duprate
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 _SERVER_ROOT = "/path/to/datasets/handwritten"
-LATENT_DIR   = os.path.join(_SERVER_ROOT, "latents")
-DATA_DIR     = os.path.join(_SERVER_ROOT, "data")
+LATENT_DIR   = os.environ.get("RP1_ABL_LATENT_DIR", os.path.join(_SERVER_ROOT, "latents"))
+DATA_DIR     = os.environ.get("RP1_ABL_DATA_DIR",   os.path.join(_SERVER_ROOT, "data"))
 NRAE_CKPT    = os.path.join(AUG_DIR, "checkpoints", "nrae_best.pkl")
 CLF_CKPT     = os.path.join(AUG_DIR, "checkpoints", "classifier_baseline_best.pkl")
-RESULTS_DIR  = os.path.join(HERE, "results")
-FIG_DIR      = os.path.join(HERE, "figures")
+RESULTS_DIR  = os.environ.get("RP1_ABL_RESULTS_DIR", os.path.join(HERE, "results_baoab"))
+FIG_DIR      = os.environ.get("RP1_ABL_FIG_DIR",     os.path.join(HERE, "figures_baoab"))
 
 # ── Hyperparameters (match high_dimension/handwritten/config.py) ──────────────
 SIGMA_SMOOTHING = 0.2       # LDS smoothing bandwidth (fixed)
@@ -70,6 +89,12 @@ N_GEN_TIMING = 100          # N_GENERATE used for CPU timing
 # Experiment B
 N_GEN_B         = 500
 N_TRAIN_LIST_B  = [50, 100, 200, 500, 700, 1000]
+
+# Smoke-test mode (local fixture only): fewer configurations and steps
+SMOKE = os.environ.get("RP1_ABL_SMOKE", "0") == "1"
+if SMOKE:
+    N_RUNS, SOLD_NSTEPS = 2, 5
+    N_GEN_LIST_A, N_TRAIN_LIST_B, N_GEN_B = [101, 150], [50, 120], 110
 
 # Plot colours
 COLOR_SOLD = "#1565C0"
@@ -100,6 +125,12 @@ def compute_kid_direct(feats_real: np.ndarray,
                  - 2.0 * Kxy.mean())
 
 
+def a_min_of(Lambda_mat, sigma_gmm):
+    """delta^2 * lambda_min(delta^-2 I + Lambda) = 1 + delta^2 * lambda_min(Lambda)."""
+    L = np.asarray(Lambda_mat, dtype=np.float64)
+    return float(1.0 + sigma_gmm ** 2 * np.linalg.eigvalsh(0.5 * (L + L.T)).min())
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # MM-SOLD correction parameters (λ, Λ)
 # ═════════════════════════════════════════════════════════════════════════════
@@ -107,6 +138,29 @@ def compute_kid_direct(feats_real: np.ndarray,
 def estimate_mm_params(key, Xw, sigma_gmm, sigma_s, M):
     """
     Compute MM-SOLD correction parameters (λ, Λ) in whitened latent space.
+
+    Solves the Lyapunov equation  Σ* Λ + Λ Σ* = 2S  where
+        μ*      = mean(Xw)
+        Σ*      = σ_gmm² I + empirical_cov(Xw)
+        G_i     = smoothed score  ∇V(xᵢ)  evaluated at training points
+        λ       = -mean(G)
+        C       = (Xw - μ*)ᵀ G / n
+        S       = I - ½(C + Cᵀ)
+
+    Parameters
+    ----------
+    key      : JAX PRNGKey
+    Xw       : (n, d)  whitened training latents  (JAX array)
+    sigma_gmm: GMM bandwidth
+    sigma_s  : LDS smoothing bandwidth
+    M        : number of MC noise samples
+
+    Returns
+    -------
+    lambda_vec : (d,)    float32
+    Lambda_mat : (d, d)  float32
+    xbar       : (d,)    float32  mean of Xw
+    Sigma_tgt  : (d, d)  float32  target covariance Σ*
     """
     Xw_np = np.array(Xw, dtype=np.float64)
     n, d  = Xw_np.shape
@@ -151,45 +205,67 @@ def _run_kld_baoab(q, p, key,
                    Xw, xw_norm2, xbar, lambda_vec, Lambda_mat,
                    sigma_gmm, sigma_s, h, gamma, M, n_steps):
     """
-    BAOAB kinetic Langevin for a batch of independent particles.
+    BAOAB kinetic Langevin for a batch of independent particles, with one
+    stochastic force evaluation per step (identical ordering to
+    common/tilting_lion.py::run_chains with splitting="BAOAB").
+
+    Target energy:  U_mm(z) = V(z) + lambda^T z + 1/2 (z - mu*)^T Lambda (z - mu*)
+    Gradient:       F(z)    = grad V(z) + lambda + Lambda (z - mu*)
+
+    One step:
+      B  p -= (h/2) F            F computed at the end of the previous step
+      A  q += (h/2) p
+      O  p  = alpha p + sqrt(1-alpha^2) xi,  xi ~ N(0, I),  alpha = exp(-gamma h)
+      A  q += (h/2) p
+         F  = force at the new q (fresh smoothing noise)
+      B  p -= (h/2) F
+
+    Parameters
+    ----------
+    q  : (B, d)  initial positions (whitened space)
+    p  : (B, d)  initial momenta
     """
     alpha = jnp.exp(-gamma * h)
     c     = jnp.sqrt(1.0 - alpha * alpha)
 
-    def body(carry, _):
-        q, p, key = carry
-
-        # B: half position step
-        q = q + (h * 0.5) * p
-
-        # Compute gradient once (reused for both A sub-steps)
-        key, k_g = jax.random.split(key)
-        g_V  = gradU_LDS_mc_stationary(
-            k_g, q, Xw, xw_norm2,
+    def force(q, k):
+        g_V = gradU_LDS_mc_stationary(
+            k, q, Xw, xw_norm2,
             sigma_gmm, sigma_s, M,
             shared_noise=False,
         )                                                    # (B, d)
-        g_mm = (g_V
+        return (g_V
                 + lambda_vec[None, :]
-                + (q - xbar[None, :]) @ Lambda_mat)         # (B, d)
+                + (q - xbar[None, :]) @ Lambda_mat)          # (B, d)
 
-        # A: first half momentum step
-        p = p - (h * 0.5) * g_mm
+    key, k0 = jax.random.split(key)
+    g0 = force(q, k0)
+
+    def body(carry, _):
+        q, p, g, key = carry
+
+        # B: half momentum step with the carried-over force
+        p = p - (h * 0.5) * g
+
+        # A: half position step
+        q = q + (h * 0.5) * p
 
         # O: Ornstein-Uhlenbeck thermostat
         key, k_o = jax.random.split(key)
         xi = jax.random.normal(k_o, p.shape, dtype=p.dtype)
         p  = alpha * p + c * xi
 
-        # A: second half momentum step (same gradient)
-        p = p - (h * 0.5) * g_mm
-
-        # B: half position step
+        # A: half position step
         q = q + (h * 0.5) * p
 
-        return (q, p, key), None
+        # force at the new position (fresh smoothing noise), then B
+        key, k_g = jax.random.split(key)
+        g = force(q, k_g)
+        p = p - (h * 0.5) * g
 
-    (q_final, _, _), _ = jax.lax.scan(body, (q, p, key), None, length=n_steps)
+        return (q, p, g, key), None
+
+    (q_final, _, _, _), _ = jax.lax.scan(body, (q, p, g0, key), None, length=n_steps)
     return q_final
 
 
@@ -197,7 +273,12 @@ def sample_kld(Xw, xbar, lambda_vec, Lambda_mat,
                n_particles, n_steps, h, gamma,
                sigma_gmm, sigma_s, M, seed=0):
     """
-    Sample from the moment-matched marginal distribution via BAOAB.
+    Sample from the moment-matched marginal distribution via BAOAB
+    (one force evaluation per step).
+    Particles are independent (no manifold constraint).
+    Initialised from the GMM — identical to MM-SOLD initialisation.
+
+    Returns (n_particles, d) whitened latents (numpy).
     """
     d        = Xw.shape[1]
     xw_norm2 = jnp.sum(Xw * Xw, axis=1)
@@ -374,8 +455,9 @@ def _plot_timing(x_vals, sold_times, kld_times, xlabel, fig_path):
 
 def main():
     print("=" * 65)
-    print("Particle-Number Ablation: MM-SOLD vs KLD-BAOAB")
+    print("Particle-Number Ablation (BAOAB re-run): MM-SOLD vs KLD-BAOAB")
     print("=" * 65)
+    print(f"SMOKE={SMOKE}  RESULTS_DIR={RESULTS_DIR}  FIG_DIR={FIG_DIR}")
     print(f"JAX backend : {jax.default_backend()}  devices : {jax.devices()}")
 
     os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -432,31 +514,14 @@ def main():
     print(f"  |λ| = {np.linalg.norm(lambda_A):.5f}  "
           f"Λ eigs ∈ [{np.linalg.eigvalsh(Lambda_A).min():.4f}, "
           f"{np.linalg.eigvalsh(Lambda_A).max():.4f}]")
+    a_min_A = a_min_of(Lambda_A, SIGMA_GMM)
+    print(f"  a_min = delta^2 lambda_min(delta^-2 I + Lambda) = {a_min_A:.4f}")
 
     sold_kid_A, sold_dup_A = [], []
     kld_kid_A,  kld_dup_A  = [], []
-    sold_time_A = None
-    kld_time_A  = None
 
     for n_gen in N_GEN_LIST_A:
         print(f"\n  [A] N_GENERATE={n_gen}")
-
-        # CPU timing at N_GEN_TIMING
-        if n_gen == N_GEN_TIMING:
-            print(f"    Measuring CPU time (N_GENERATE={n_gen}, "
-                  f"warmup=1, timed=3) ...")
-            with jax.default_device(jax.devices("cpu")[0]):
-                _sold_fn = lambda: run_sold(
-                    Z_train_A, mean_A, S_sqrt_A, S_invsqrt_A, n_gen, seed=0)
-                _kld_fn  = lambda: run_kld(
-                    Xw_A, xbar_A, lambda_A, Lambda_A,
-                    mean_A, S_sqrt_A, n_gen, seed=0)
-                t_sold = _measure_cpu_time(_sold_fn, n_warmup=1, n_timed=3)
-                t_kld  = _measure_cpu_time(_kld_fn,  n_warmup=1, n_timed=3)
-            sold_time_A = t_sold / n_gen * 1000   # ms per sample
-            kld_time_A  = t_kld  / n_gen * 1000
-            print(f"    SOLD: {sold_time_A:.3f} ms/sample  "
-                  f"KLD: {kld_time_A:.3f} ms/sample")
 
         # N_RUNS independent runs
         kid_s_runs, dup_s_runs = [], []
@@ -493,21 +558,19 @@ def main():
         "n_gen_list": N_GEN_LIST_A,
         "sold":       {"kid": sold_kid_A, "dup": sold_dup_A},
         "kld":        {"kid": kld_kid_A,  "dup": kld_dup_A},
-        "timing":     {"sold_ms_per_sample": sold_time_A,
-                       "kld_ms_per_sample":  kld_time_A,
-                       "n_gen_timing":       N_GEN_TIMING},
+        "a_min":      a_min_A,
     }
 
     # ══════════════════════════════════════════════════════════════════════════
     # Experiment B:  Fixed N_GENERATE=1500, varying N_TRAIN
     # ══════════════════════════════════════════════════════════════════════════
     print(f"\n{'='*65}")
-    print("Experiment B: N_GENERATE=1500, varying N_TRAIN")
+    print(f"Experiment B: N_GENERATE={N_GEN_B}, varying N_TRAIN")
     print(f"{'='*65}")
 
     sold_kid_B, sold_dup_B = [], []
     kld_kid_B,  kld_dup_B  = [], []
-    sold_time_B, kld_time_B = [], []
+    a_min_B = []
 
     rng_sub = np.random.default_rng(0)   # reproducible subsampling
 
@@ -531,22 +594,10 @@ def main():
         key, k_mm = jax.random.split(key)
         lambda_B, Lambda_B, xbar_B, _ = estimate_mm_params(
             k_mm, Xw_B, SIGMA_GMM, SIGMA_SMOOTHING, M_MC)
-        print(f"    |λ| = {np.linalg.norm(lambda_B):.5f}")
-
-        # CPU timing (always at N_GEN_TIMING=100 for comparability across N_TRAIN)
-        print(f"    Measuring CPU time (N_GENERATE={N_GEN_TIMING}) ...")
-        with jax.default_device(jax.devices("cpu")[0]):
-            _sold_fn = lambda: run_sold(
-                Z_train_B, mean_B, S_sqrt_B, S_invsqrt_B, N_GEN_TIMING, seed=0)
-            _kld_fn  = lambda: run_kld(
-                Xw_B, xbar_B, lambda_B, Lambda_B,
-                mean_B, S_sqrt_B, N_GEN_TIMING, seed=0)
-            t_sold = _measure_cpu_time(_sold_fn, n_warmup=1, n_timed=3)
-            t_kld  = _measure_cpu_time(_kld_fn,  n_warmup=1, n_timed=3)
-        sold_time_B.append(t_sold / N_GEN_TIMING * 1000)
-        kld_time_B.append( t_kld  / N_GEN_TIMING * 1000)
-        print(f"    SOLD: {sold_time_B[-1]:.3f} ms/sample  "
-              f"KLD: {kld_time_B[-1]:.3f} ms/sample")
+        a_min_B.append(a_min_of(Lambda_B, SIGMA_GMM))
+        print(f"    |λ| = {np.linalg.norm(lambda_B):.5f}  "
+              f"Λ eigs ∈ [{np.linalg.eigvalsh(Lambda_B).min():.4f}, "
+              f"{np.linalg.eigvalsh(Lambda_B).max():.4f}]  a_min = {a_min_B[-1]:.4f}")
 
         # N_RUNS independent runs
         kid_s_runs, dup_s_runs = [], []
@@ -583,9 +634,8 @@ def main():
         "n_train_list": N_TRAIN_LIST_B,
         "sold":         {"kid": sold_kid_B, "dup": sold_dup_B},
         "kld":          {"kid": kld_kid_B,  "dup": kld_dup_B},
-        "timing":       {"sold_ms_per_sample": sold_time_B,
-                         "kld_ms_per_sample":  kld_time_B,
-                         "n_gen_timing":       N_GEN_TIMING},
+        "n_gen":        N_GEN_B,
+        "a_min":        a_min_B,
     }
 
     # ── Save results ──────────────────────────────────────────────────────────
@@ -599,11 +649,13 @@ def main():
             "k_whiten":        K_WHITEN,
             "gamma_kld":       GAMMA_KLD,
             "n_runs":          N_RUNS,
+            "kld_integrator":  "BAOAB (one force evaluation per step)",
+            "smoke":           SMOKE,
         },
         "experiment_A": results_A,
         "experiment_B": results_B,
     }
-    results_path = os.path.join(RESULTS_DIR, "results_particle_nums.json")
+    results_path = os.path.join(RESULTS_DIR, "results_particle_nums_baoab.json")
     with open(results_path, "w") as f:
         json.dump(all_results, f, indent=2)
     print(f"\nResults saved: {results_path}")
@@ -638,10 +690,6 @@ def main():
                  "Number of training centers", "DupRate",
                  os.path.join(FIG_DIR, "exp_B_duprate.pdf"))
 
-    _plot_timing(N_TRAIN_LIST_B, sold_time_B, kld_time_B,
-                 "Number of training centers",
-                 os.path.join(FIG_DIR, "exp_B_timing.pdf"))
-
     # Print summary tables
     print("\n=== Experiment A Summary (N_TRAIN=1000) ===")
     print(f"{'N_GEN':>8}  {'SOLD KID':>10}  {'SOLD Dup':>10}  "
@@ -653,12 +701,11 @@ def main():
         print(f"{n_gen:>8d}  "
               f"{sk[0]:>6.4f}±{sk[1]:.4f}  {sd[0]:>5.3f}±{sd[1]:.3f}  "
               f"{kk[0]:>6.4f}±{kk[1]:.4f}  {kd[0]:>5.3f}±{kd[1]:.3f}")
-    print(f"\nCPU time at N_GEN={N_GEN_TIMING}:  "
-          f"SOLD={sold_time_A:.3f} ms/sample  KLD={kld_time_A:.3f} ms/sample")
+    print(f"\na_min (N_TRAIN=1000) = {a_min_A:.4f}")
 
-    print("\n=== Experiment B Summary (N_GENERATE=1500) ===")
+    print(f"\n=== Experiment B Summary (N_GENERATE={N_GEN_B}) ===")
     print(f"{'N_TRAIN':>8}  {'SOLD KID':>10}  {'SOLD Dup':>10}  "
-          f"{'KLD KID':>10}  {'KLD Dup':>10}  {'SOLD ms':>8}  {'KLD ms':>8}")
+          f"{'KLD KID':>10}  {'KLD Dup':>10}  {'a_min':>8}")
     print("-" * 72)
     for i, n_train in enumerate(N_TRAIN_LIST_B):
         sk, sd = sold_kid_B[i], sold_dup_B[i]
@@ -666,7 +713,7 @@ def main():
         print(f"{n_train:>8d}  "
               f"{sk[0]:>6.4f}±{sk[1]:.4f}  {sd[0]:>5.3f}±{sd[1]:.3f}  "
               f"{kk[0]:>6.4f}±{kk[1]:.4f}  {kd[0]:>5.3f}±{kd[1]:.3f}  "
-              f"{sold_time_B[i]:>7.3f}  {kld_time_B[i]:>7.3f}")
+              f"{a_min_B[i]:>8.4f}")
 
     print("\nDone.")
 
