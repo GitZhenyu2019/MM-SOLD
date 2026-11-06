@@ -1,7 +1,7 @@
 """
 step1_prepare_subspace.py
 =============================
-Data prep for the revised digit-8 GENERATION experiment
+Data prep for the digit-8 GENERATION experiment
 """
 import argparse
 import json
@@ -34,7 +34,7 @@ def main():
     os.makedirs(a.out, exist_ok=True)
 
     print("=" * 60)
-    print(f"Step 1 (v2): digit-8 generation -- pooled top-{a.proj_k} subspace")
+    print(f"Step 1: digit-8 generation -- pooled top-{a.proj_k} subspace")
     print("=" * 60)
     print(f"JAX backend: {jax.default_backend()}  devices: {jax.devices()}")
     print(f"  raw_img    = {a.raw_img}")
@@ -125,7 +125,7 @@ def main():
 
     print(f"\nSaved to {a.out}/")
     print("  U_train8.npy, mean_8.npy, proj_V.npy, imgs_test8.npy, meta.json")
-    print("\nStep 1 (v2) complete!")
+    print("\nStep 1 complete!")
 
 
 if __name__ == "__main__":

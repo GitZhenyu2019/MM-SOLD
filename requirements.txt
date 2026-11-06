@@ -20,6 +20,5 @@ onnxruntime-gpu>=1.16
 
 # low_dimension/run_experiment.py optional 3D point-cloud demos only
 # (not needed to reproduce the paper's reported checkerboard/spirals results)
-# pot
 # polyscope
 # point-cloud-utils

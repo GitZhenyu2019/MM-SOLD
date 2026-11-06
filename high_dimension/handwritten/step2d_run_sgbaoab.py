@@ -1,7 +1,7 @@
 """
 step2d_run_sgbaoab.py
 ==========================
-SG-BAOAB grid search for the revised digit-8 generation experiment.
+SG-BAOAB grid search for the digit-8 generation experiment.
 """
 import argparse
 import json
@@ -49,7 +49,7 @@ def main():
     os.makedirs(cache_dir, exist_ok=True)
 
     print("=" * 60)
-    print("Step 2d (v2): SG-BAOAB grid search")
+    print("Step 2d: SG-BAOAB grid search")
     print("=" * 60)
     print(f"JAX backend: {jax.default_backend()}  devices: {jax.devices()}")
 
@@ -275,7 +275,7 @@ def main():
             json.dump(timing_out, f, indent=2)
 
     print(f"\nSaved results to {a.out}/")
-    print("\nStep 2d (v2) complete!")
+    print("\nStep 2d complete!")
 
 
 if __name__ == "__main__":

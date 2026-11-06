@@ -1,7 +1,7 @@
 """
 step2f_run_swf.py
 ======================
-Sliced-Wasserstein Flow (SWF) grid search for the revised digit-8 generation
+Sliced-Wasserstein Flow (SWF) grid search for the digit-8 generation
 experiment.
 """
 import argparse
@@ -42,7 +42,7 @@ def main():
     os.makedirs(a.out, exist_ok=True)
 
     print("=" * 60)
-    print("Step 2f (v2): Sliced-Wasserstein Flow grid search")
+    print("Step 2f: Sliced-Wasserstein Flow grid search")
     print("=" * 60)
     print(f"JAX backend: {jax.default_backend()}  devices: {jax.devices()}")
 
@@ -193,7 +193,7 @@ def main():
             json.dump(timing_out, f, indent=2)
 
     print(f"\nSaved results to {a.out}/")
-    print("\nStep 2f (v2) complete!")
+    print("\nStep 2f complete!")
 
 
 if __name__ == "__main__":

@@ -34,7 +34,7 @@ def main():
     os.makedirs(a.out, exist_ok=True)
 
     print("=" * 60)
-    print("Step 1 (v2): prepare data + the NRAE + top-%d subspace" % a.proj_k)
+    print("Step 1: prepare data + the NRAE + top-%d subspace" % a.proj_k)
     print("=" * 60)
     print(f"JAX backend: {jax.default_backend()}  devices: {jax.devices()}")
     print(f"  raw_img    = {a.raw_img}")
@@ -44,7 +44,7 @@ def main():
         if not os.path.exists(p):
             print(f"  [WARNING] missing: {p}")
 
-    # ── 1. Load + preprocess (identical split/pipeline to the original) ────
+    # ── 1. Load + preprocess (same split and preprocessing as all digit experiments) ────
     print("\n[1] Loading + preprocessing images ...")
     images_np, digits_np = load_images_and_digits(a.raw_img, a.raw_label)
     print(f"  raw: {images_np.shape}, labels: {digits_np.shape}")
@@ -115,7 +115,7 @@ def main():
     U_val = TL.to_subspace(Z_val, mean_g, V)
     U_test = TL.to_subspace(Z_test, mean_g, V)
 
-    # ── 4. Per-class NN_c in the top-k subspace, eq. (71) ───────────────────
+    # ── 4. Per-class NN_c in the top-k subspace ───────────────────
     print(f"\n[4] Per-class average nearest-neighbor distance NN_c (top-{a.proj_k}):")
     NN = {}
     for c in range(cfg.N_CLASSES):
@@ -146,7 +146,7 @@ def main():
     print(f"\nSaved to {a.out}/")
     print("  U_train.npy, y_train.npy, U_val.npy, y_val.npy, U_test.npy, y_test.npy")
     print("  proj_mean.npy, proj_V.npy, nn_distances.json, meta.json")
-    print("\nStep 1 (v2) complete!")
+    print("\nStep 1 complete!")
 
 
 if __name__ == "__main__":

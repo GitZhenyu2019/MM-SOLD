@@ -139,7 +139,7 @@ def step_overdamped_stationary_manifold(
     """
     One step of constrained overdamped Langevin:
       1. Map Y -> Z, compute LDS gradient in Z-space.
-      2. Pull gradient back to Y-space via L^T.
+      2. Pull gradient back to Y-space via L (Z = mu + Y L^T).
       3. Project drift and noise onto tangent space of scaled Stiefel.
       4. Update Y and retract to manifold (center + QR).
 
@@ -151,7 +151,7 @@ def step_overdamped_stationary_manifold(
     key, k_g, k_n = jax.random.split(key, 3)
     gZ     = gradU_LDS_mc_stationary(k_g, Z, X, x_norm2, sigma, s, M,
                                       shared_noise=shared_noise)
-    gY_tan = proj_tangent_scaled_stiefel(Y, gZ @ L_tgt.T)
+    gY_tan = proj_tangent_scaled_stiefel(Y, gZ @ L_tgt)
     xi     = jax.random.normal(k_n, (B, d), dtype=Y.dtype)
     xi_tan = proj_tangent_scaled_stiefel(Y, xi)
 
@@ -219,7 +219,7 @@ def sample_class_overdamped_manifold(
             gZ   = gradU_LDS_fixed(Z, X, x_norm2, sigma_gmm,
                                    sigma_smoothing, eps_fixed,
                                    shared_noise=shared_noise)
-            gY_tan    = proj_tangent_scaled_stiefel(Y, gZ @ L_tgt.T)
+            gY_tan    = proj_tangent_scaled_stiefel(Y, gZ @ L_tgt)
             key, k_n  = jax.random.split(key)
             xi_new    = jax.random.normal(k_n, (n_particles, d), dtype=Y.dtype)
             xi_tan    = proj_tangent_scaled_stiefel(Y, xi_new)
@@ -299,12 +299,11 @@ def _knn_rem_score_batched(
         logit_const = inner_x / sigma2 - sq_sel / (2.0 * sigma2) + log_corr  # (m,)
 
         # Noise sampling: m-dim Cholesky if m < d, else d-dim projection
-        # Regularization: 1e-4 relative to trace(G)/m to stay safe in float32
+        # mu_sel.T = Q R gives G = mu_sel mu_sel^T = R^T R (also when G is singular),
+        # so eta = z @ L_eta^T has covariance exactly c2 * G.
         if m < d:
-            G       = mu_sel @ mu_sel.T
-            reg     = jnp.maximum(1e-6, 1e-4 * jnp.mean(jnp.diag(G)))
-            cov_eta = c2 * G + reg * jnp.eye(m, dtype=mu_sel.dtype)
-            L_eta   = jnp.linalg.cholesky(cov_eta)
+            _, R_qr = jnp.linalg.qr(mu_sel.T, mode="reduced")
+            L_eta   = jnp.sqrt(c2) * R_qr.T
             if antithetic:
                 Nhalf   = Nsamp // 2
                 z_samp  = jax.random.normal(key_mc, (Nhalf, m), dtype=mu_sel.dtype)
@@ -365,7 +364,7 @@ def _step_overdamped_knn_manifold(
     )
     gZ     = -grads                                 # gradU = -score
 
-    gY_tan = proj_tangent_scaled_stiefel(Y, gZ @ L_tgt.T)
+    gY_tan = proj_tangent_scaled_stiefel(Y, gZ @ L_tgt)
     xi     = jax.random.normal(k_n, (B, d), dtype=Y.dtype)
     xi_tan = proj_tangent_scaled_stiefel(Y, xi)
 

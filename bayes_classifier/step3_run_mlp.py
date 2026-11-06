@@ -1,7 +1,7 @@
 """
 step3_run_mlp.py
 =====================
-The two MLP rows of the revised digit classification results table
+The two MLP rows of the digit classification results table
 """
 import argparse
 import itertools
@@ -144,7 +144,7 @@ def main():
     os.makedirs(args.out, exist_ok=True)
 
     print("=" * 60)
-    print(f"Step 3 (v2): MLP -- mode={args.mode}")
+    print(f"Step 3: MLP -- mode={args.mode}")
     print("=" * 60)
     print(f"JAX backend: {jax.default_backend()}  devices: {jax.devices()}")
 

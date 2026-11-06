@@ -1,7 +1,7 @@
 """
 step3_run_ddpm.py
 ======================
-Latent DDPM baseline for the revised digit-8 generation experiment
+Latent DDPM baseline for the digit-8 generation experiment
 """
 import argparse
 import json
@@ -68,7 +68,7 @@ def main():
     os.makedirs(a.out, exist_ok=True)
 
     print("=" * 60)
-    print("Step 3 (v2): Latent DDPM (top-40 subspace)")
+    print("Step 3: Latent DDPM (top-40 subspace)")
     print("=" * 60)
     print(f"JAX backend: {jax.default_backend()}  devices: {jax.devices()}")
 
@@ -310,7 +310,7 @@ def main():
             json.dump(timing_out, f, indent=2)
 
     print(f"\nSaved results to {a.out}/")
-    print("\nStep 3 (v2) complete!")
+    print("\nStep 3 complete!")
 
 
 if __name__ == "__main__":

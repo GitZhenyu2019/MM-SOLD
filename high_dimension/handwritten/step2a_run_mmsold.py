@@ -1,7 +1,7 @@
 """
 step2a_run_mmsold.py
 ========================
-MM-SOLD grid search for the revised digit-8 generation experiment.
+MM-SOLD grid search for the digit-8 generation experiment.
 """
 import argparse
 import json
@@ -34,8 +34,7 @@ def main():
                          "(default: resume, skipping already-computed cells)")
     ap.add_argument("--make_grids", action="store_true",
                     help="also save an 8x8 sample grid + nearest-neighbour "
-                         "visualisation PNG for EVERY grid cell (like the "
-                         "original v1 experiment's --make_grids), so you can "
+                         "visualisation PNG for EVERY grid cell, so you can "
                          "look through all cells yourself instead of trusting "
                          "only the best-KID cell. Independently resumable: "
                          "skips a cell's image if the PNG already exists, "
@@ -49,7 +48,7 @@ def main():
     os.makedirs(a.out, exist_ok=True)
 
     print("=" * 60)
-    print("Step 2a (v2): MM-SOLD grid search")
+    print("Step 2a: MM-SOLD grid search")
     print("=" * 60)
     print(f"JAX backend: {jax.default_backend()}  devices: {jax.devices()}")
 
@@ -212,7 +211,7 @@ def main():
             json.dump(timing_out, f, indent=2)
 
     print(f"\nSaved results to {a.out}/")
-    print("\nStep 2a (v2) complete!")
+    print("\nStep 2a complete!")
 
 
 if __name__ == "__main__":

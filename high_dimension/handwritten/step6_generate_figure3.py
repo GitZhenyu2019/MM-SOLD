@@ -124,7 +124,7 @@ def main():
     os.makedirs(cache_dir, exist_ok=True)
 
     print("=" * 60)
-    print("Step 6 (v2): digit-8 representative-sample figure -- representative samples, all methods")
+    print("Step 6: digit-8 representative-sample figure -- representative samples, all methods")
     print("=" * 60)
     print(f"JAX backend: {jax.default_backend()}  devices: {jax.devices()}")
 
@@ -317,7 +317,7 @@ def main():
     print(f"  Saved: {combined_path}")
 
     print(f"\nAll digit-8 representative-sample figure PNGs saved under {a.fig_dir}/ (panels in {a.fig_dir}/grids/)")
-    print("\nStep 6 (v2) complete!")
+    print("\nStep 6 complete!")
 
 
 if __name__ == "__main__":

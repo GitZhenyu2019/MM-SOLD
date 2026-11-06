@@ -16,14 +16,12 @@ import matplotlib.pyplot as plt
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 
-from run_experiment import get_dataset, _axis_limits
+from run_experiment import CACHE_VERSION, _axis_limits
 
 # ─── Settings ────────────────────────────────────────────────────────────────
-N_TRAIN        = 500       # paper setting (for "vs training" scatter)
-SEED           = 0
-DEFAULT_LEGEND = 12        # enlarged from original 7
-C_SOLD         = "#2980b9" # original MM-SOLD blue
-C_REF          = "#e74c3c" # original red (σ-CFDM / Training)
+DEFAULT_LEGEND = 12        # legend font size
+C_SOLD         = "#2980b9" # MM-SOLD (blue)
+C_REF          = "#e74c3c" # σ-CFDM / training (red)
 
 RESULTS_DIR = os.path.join(_HERE, "results")
 FIG_DIR     = os.path.join(_HERE, "figures_paper_2d")
@@ -34,7 +32,7 @@ FIG_DIR     = os.path.join(_HERE, "figures_paper_2d")
 def scatter_panel(ax, pts_ref, pts_gen,
                   c_ref, c_gen, lbl_ref, lbl_gen,
                   title: str, legend_fontsize: int):
-    """Exact style as original figures/ (commit b306a91); only legend fontsize differs."""
+    """Scatter panel used for the paper figures."""
     kw_gen = dict(s=5, alpha=0.35, linewidths=0, rasterized=True)
     kw_ref = dict(s=5, alpha=0.55, linewidths=0, rasterized=True)
 
@@ -87,6 +85,8 @@ def plot_config(dname, res, X_train, M, sigma, legend_fontsize, out_dir):
 
     tag   = f"M{M}_s{sigma}"
     title = f"M={M}, σ={sigma}"
+    if res.get("config", {}).get("smoke_test"):
+        title += " (smoke test)"
 
     print(f"  M={M} σ={sigma}  W2_target: SOLD={w2t_sold:.4f}  CFDM={w2t_cfdm:.4f}")
 
@@ -107,30 +107,55 @@ def plot_config(dname, res, X_train, M, sigma, legend_fontsize, out_dir):
 
 # ─── Main ────────────────────────────────────────────────────────────────────
 
-def main():
+def plot_results(dname, res, fig_dir=FIG_DIR, legend_fontsize=DEFAULT_LEGEND,
+                 M=None, sigma=None):
+    """Render panels from the actual training set and samples saved by the runner."""
+    if (res.get("config", {}).get("cache_version") != CACHE_VERSION
+            or "X_train" not in res):
+        raise ValueError("Cached results were produced with different settings. "
+                         "Regenerate with run_experiment.py before plotting.")
+    X_train = res["X_train"]
+    print(f"  Training data: {X_train.shape}; settings: {res['config']}")
+    out_dir = os.path.join(fig_dir, dname)
+    os.makedirs(out_dir, exist_ok=True)
+    configs = ([(M, sigma)] if M is not None else
+               [(m, s) for m in res["M_list"] for s in res["sigma_list"]])
+    for m, s in configs:
+        plot_config(dname, res, X_train, m, s, legend_fontsize, out_dir)
+
+
+def main(argv=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("--M",               type=int,   default=None,
                         help="Plot only this M (must also set --sigma)")
     parser.add_argument("--sigma",           type=float, default=None,
                         help="Plot only this sigma (must also set --M)")
     parser.add_argument("--legend_fontsize", type=int,   default=DEFAULT_LEGEND)
-    args = parser.parse_args()
+    parser.add_argument("--results-dir", default=RESULTS_DIR)
+    parser.add_argument("--output-dir", default=FIG_DIR)
+    parser.add_argument("--datasets", nargs="+", default=["checkerboard", "spirals"])
+    args = parser.parse_args(argv)
+    if (args.M is None) != (args.sigma is None):
+        parser.error("--M and --sigma must be supplied together")
 
-    os.makedirs(FIG_DIR, exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
 
     print("=" * 55)
     print("2-D Paper Figures (from cached pkl)")
-    print(f"  N_TRAIN={N_TRAIN}  legend_fontsize={args.legend_fontsize}")
+    print(f"  legend_fontsize={args.legend_fontsize}")
     if args.M is not None:
         print(f"  Mode: single config  M={args.M}, σ={args.sigma}")
     else:
         print("  Mode: ALL cached (M, σ) combinations")
     print("=" * 55)
 
-    for dname in ["checkerboard", "spirals"]:
+    for dname in args.datasets:
         print(f"\n=== {dname} ===")
 
-        pkl_path = os.path.join(RESULTS_DIR, f"{dname}_results.pkl")
+        pkl_path = os.path.join(args.results_dir, f"{dname}_results.pkl")
+        if not os.path.exists(pkl_path):
+            parser.error(f"Missing {pkl_path}. Run run_experiment.py first; "
+                         "it generates both caches and paper panels from scratch.")
         with open(pkl_path, "rb") as f:
             res = pickle.load(f)
         print(f"  Loaded {pkl_path}")
@@ -138,22 +163,10 @@ def main():
         print(f"  sigma_list: {res['sigma_list']}")
         print(f"  N_GEN     : {next(iter(res['samples_mmsold'].values())).shape[0]}")
 
-        X_train = get_dataset(dname, N_TRAIN, seed=SEED + 1)
-        print(f"  Training data: {X_train.shape}  (N_TRAIN={N_TRAIN})")
+        plot_results(dname, res, args.output_dir, args.legend_fontsize,
+                     M=args.M, sigma=args.sigma)
 
-        out_dir = os.path.join(FIG_DIR, dname)
-        os.makedirs(out_dir, exist_ok=True)
-
-        if args.M is not None:
-            plot_config(dname, res, X_train, args.M, args.sigma,
-                        args.legend_fontsize, out_dir)
-        else:
-            for M in res["M_list"]:
-                for sigma in res["sigma_list"]:
-                    plot_config(dname, res, X_train, M, sigma,
-                                args.legend_fontsize, out_dir)
-
-    print(f"\n=== Done.  Figures → {FIG_DIR} ===")
+    print(f"\n=== Done.  Figures → {args.output_dir} ===")
 
 
 if __name__ == "__main__":

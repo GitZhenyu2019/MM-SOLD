@@ -154,7 +154,7 @@ def main():
     ap.add_argument("--regenerate", action="store_true",
                     help="force fresh sampling for Figures 5/7 instead of "
                          "reusing cached raw samples from a previous run "
-                         "(use this after a sampler bugfix or a change to "
+                         "(use this after changing a sampler or "
                          "the representative cell; NOT needed just to tweak "
                          "plot styling, which replots from cache by default)")
     ap.add_argument("--smoke_test", action="store_true",
@@ -185,7 +185,7 @@ def main():
     os.makedirs(cache_dir, exist_ok=True)
 
     print("=" * 60)
-    print("Step 5 (v2): the appendix additional results (Fig 5/6/7/8, digit-8 posterior-moment-validation table)")
+    print("Step 5: the appendix additional results (Fig 5/6/7/8, digit-8 posterior-moment-validation table)")
     print("=" * 60)
     print(f"JAX backend: {jax.default_backend()}  devices: {jax.devices()}")
 
@@ -470,7 +470,7 @@ def main():
     print(f"\nSaved: {os.path.join(a.results_dir, table5_name)}")
 
     print(f"\nAll digit-8 sigma-CFDM/MM-SOLD sample-grid figure/6/7/8 PNGs saved under {a.fig_dir}/ (and {a.fig_dir}/grids/)")
-    print("\nStep 5 (v2) complete!")
+    print("\nStep 5 complete!")
 
 
 if __name__ == "__main__":

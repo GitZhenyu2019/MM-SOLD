@@ -1,7 +1,7 @@
 """
 step2_run_ecm.py
 =====================
-Minimum-ECM classifier(s) for the revised experiment
+Minimum-ECM classifier(s) for the classification experiment
 """
 import argparse
 import itertools
@@ -175,7 +175,7 @@ def main():
     cells = list(itertools.product(c_grid, c_grid))
 
     print("=" * 60)
-    print(f"Step 2 (v2): MM Target Min. ECM Classifier -- estimator={args.estimator}")
+    print(f"Step 2: MM Target Min. ECM Classifier -- estimator={args.estimator}")
     print("=" * 60)
     print(f"JAX backend: {jax.default_backend()}  devices: {jax.devices()}")
     print(f"  classes    : {classes}")

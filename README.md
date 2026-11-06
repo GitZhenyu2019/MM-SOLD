@@ -73,10 +73,10 @@ MM-SOLD_code_release/
 ```
 
 **Note on `augmentation_handwritten/sampling_algo.py` vs `common/sampling_algo.py`:** these are two
-*different* files with the same name. `common/sampling_algo.py` is the newer, no-whitening sampler
+*different* files with the same name. `common/sampling_algo.py` is the no-whitening sampler
 used by `bayes_classifier/`, `high_dimension/handwritten/`, and `high_dimension/celebahq256/`.
-`augmentation_handwritten/sampling_algo.py` is an older, whitening-based variant used only within
-`augmentation_handwritten/`'s own NRAE-augmentation pipeline. Keep both, in their own folders — do
+`augmentation_handwritten/sampling_algo.py` is a whitening-based variant used by
+`augmentation_handwritten/` and `ablation_studies/particle_nums/`. Keep both, in their own folders — do
 not merge them. Similarly, `high_dimension/handwritten/config.py` and `high_dimension/celebahq256/config.py`
 (and their `common.py` counterparts) are two different files that happen to share a filename — always
 run each experiment from inside its own folder so Python resolves `import config` to the right one.
@@ -106,10 +106,9 @@ falls back to CPU on CUDA-12 machines — install a CUDA-12-matched build explic
 (the ArcFace scripts print their active onnxruntime execution providers on startup so this is easy
 to catch).
 
-`low_dimension/run_experiment.py` additionally imports `ot` (POT), `polyscope`, and
-`point_cloud_utils` for its optional 3D point-cloud demos (car/chair/fish) — these are **not** part
-of the paper's reported checkerboard/spirals comparison; install
-them only if you want to run the extra 3D demonstrations.
+`low_dimension/run_experiment.py` only needs NumPy, JAX and Matplotlib for the checkerboard/spirals
+experiments. Its optional 3D point-cloud demos require external meshes and, optionally, `polyscope`
+and `point_cloud_utils`; they are not part of the paper.
 
 `high_dimension/celebahq256/step3_train_ddpm.py` needs the DiffAE network-architecture code (not
 weights) from https://github.com/phizaz/diffae — clone it and point `RP1_DIFFAE_REPO_DIR` (or the
@@ -120,11 +119,9 @@ expected path if it's missing.
 
 Several modules resolve the `common/` library's location using a relative path from their own file
 location (e.g. `high_dimension/handwritten/config.py` looks 3 directories up for a `common/`
-sibling). That default only happens to work if this release sits in the exact spot it was assembled
-in; once you move or re-clone this folder anywhere else, set this explicitly instead of relying on
-the relative default:
+sibling). If you place the folders differently, set the locations explicitly:
 
-- `RP1_RELEASE_ROOT` — the folder that **contains** `common/` (i.e. `MM-SOLD_code_release/` itself)
+- `RP1_RELEASE_ROOT` — the folder that **contains** `common/` (the repository root)
 - `RP1_NRAE_CKPT` — path to a trained NRAE checkpoint (see "Handwritten digits" below; this is a
   ~100-dim autoencoder trained on the handwritten-digits dataset, used by `high_dimension/handwritten/`
   and `bayes_classifier/`)
@@ -169,7 +166,7 @@ there first if a script complains about a missing path.
   — this encoder is not part of this release; obtain the precomputed 512-dim train/valid latent
   arrays (`RP1_DIFFAE_ZSEM_TRAIN` / `RP1_DIFFAE_ZSEM_VALID`), the reference Inception features
   (`RP1_DIFFAE_FEATURES_NPZ`), and the DiffAE decoder's ONNX export (`RP1_DIFFAE_UNET_ONNX(+_DATA)`)
-  from wherever your lab stores the fixed DiffAE artifacts.
+  computed with the official DiffAE release (https://github.com/phizaz/diffae).
 - Before any decode step, build the TensorRT engine once per GPU architecture:
   `python high_dimension/celebahq256/build_fp16_engine.py`.
 - ArcFace metrics ("FID (ArcFace)"/"KID (ArcFace, ×10³)"/"MMD (ArcFace)" rows in both results tables, and the
@@ -187,9 +184,13 @@ cd 2d_circular && python run_2d_circular.py
 ### Checkerboard & spirals: MM-SOLD vs σ-CFDM
 ```bash
 cd low_dimension
-python run_experiment.py
-python plot_2d_paper_figures.py   # paper-formatted re-plot of the cached results
+python run_experiment.py                 # samplers + paper panels (figures_paper_2d/)
+python plot_2d_paper_figures.py          # optional: re-plot the cached results
 ```
+Defaults: 500 training points and a 5,000-point reference set (farthest-point selections from
+10x larger candidate pools, seeds 1 and 0), P = 5,000 particles, 3,000 steps of size 5e-4,
+GMM component standard deviation delta = 0.1, M in {2, 32} and smoothing bandwidths
+sigma in {0.05, 0.1, 0.15, 0.4}. Use `--help` for all options.
 
 ### Handwritten digit-8 generation
 ```bash

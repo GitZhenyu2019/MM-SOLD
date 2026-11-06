@@ -84,8 +84,8 @@ BAOAB_NSTEPS    = 1000        # sampling steps (independent of Lion's L)
 BAOAB_SPLITTING = "BAOAB"
 BAOAB_SCORE     = "knn"       # KNN+remainder score estimator throughout
 
-# SG-BAOAB Lion optimisation settings. 
-LION_N_CHAINS   = 1000   # P (paper: 8000 -- see note above)
+# SG-BAOAB Lion optimisation settings.
+LION_N_CHAINS   = 1000   # P (BAOAB chains per Lion iteration)
 LION_N_STEPS    = 100    # L (BAOAB steps per outer Lion iteration)
 LION_N_ITERS    = 300    # K (Lion steps)
 LION_LR_REL     = 1.0

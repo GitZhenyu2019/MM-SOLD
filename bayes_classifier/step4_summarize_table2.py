@@ -48,7 +48,7 @@ def main():
 
     table = {}
     print("=" * 100)
-    print("digit classification results table (revised): handwritten digit classification in the top-40 NRAE latent subspace")
+    print("digit classification results table: handwritten digit classification in the top-40 NRAE latent subspace")
     print("=" * 100)
     header = f"{'Method':<34}" + "".join(f"{d:>6}" for d in range(10)) + f"{'Overall':>9}"
     print(header)

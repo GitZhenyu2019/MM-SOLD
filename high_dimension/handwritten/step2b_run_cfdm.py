@@ -1,7 +1,7 @@
 """
 step2b_run_cfdm.py
 =======================
-sigma-CFDM grid search for the revised digit-8 generation experiment.
+sigma-CFDM grid search for the digit-8 generation experiment.
 """
 import argparse
 import json
@@ -42,7 +42,7 @@ def main():
     os.makedirs(a.out, exist_ok=True)
 
     print("=" * 60)
-    print("Step 2b (v2): sigma-CFDM grid search")
+    print("Step 2b: sigma-CFDM grid search")
     print("=" * 60)
     print(f"JAX backend: {jax.default_backend()}  devices: {jax.devices()}")
 
@@ -189,7 +189,7 @@ def main():
             json.dump(timing_out, f, indent=2)
 
     print(f"\nSaved results to {a.out}/")
-    print("\nStep 2b (v2) complete!")
+    print("\nStep 2b complete!")
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ from latent_utils import compute_sample_mean_cov  # noqa: E402
 
 
 @functools.partial(jax.jit, static_argnames=("knn_K", "knn_L", "Nsamp", "antithetic"))
-def _knn_rem_score_fixed(xs, mus, mus_sqnorm, sigma2, c2, keys,
+def _knn_rem_score(xs, mus, mus_sqnorm, sigma2, c2, keys,
                          knn_K, knn_L, Nsamp=256, antithetic=True):
     N = mus.shape[0]
     d = xs.shape[1]
@@ -53,11 +53,10 @@ def _knn_rem_score_fixed(xs, mus, mus_sqnorm, sigma2, c2, keys,
         logit_const = mu_sel @ x / sigma2 - sq_sel / (2.0 * sigma2) + log_corr
 
         if m < d:
-            G = mu_sel @ mu_sel.T
-            cov_eta = c2 * G
-            # jitter scaled by the covariance actually being factorised
-            reg = jnp.maximum(1e-6, 1e-4 * jnp.mean(jnp.diag(cov_eta)))
-            L_eta = jnp.linalg.cholesky(cov_eta + reg * jnp.eye(m, dtype=mu_sel.dtype))
+            # mu_sel.T = Q R gives G = R^T R (also when G is singular),
+            # so eta = z @ L_eta^T has covariance exactly c2 * G.
+            _, R = jnp.linalg.qr(mu_sel.T, mode="reduced")
+            L_eta = jnp.sqrt(c2) * R.T
             if antithetic:
                 z_samp = jax.random.normal(key_mc, (Nsamp // 2, m), dtype=mu_sel.dtype)
                 eta_all = jnp.concatenate([z_samp @ L_eta.T, -(z_samp @ L_eta.T)], axis=0)
@@ -90,13 +89,7 @@ def score_grad(key, q, X, x_norm2, delta, sigma_s, M,
     if score == "full":
         return gradU_LDS_mc_stationary(key, q, X, x_norm2, delta, sigma_s, M,
                                        shared_noise=False)
-    if score == "knn_repo":
-        grads, _ = _knn_rem_score_batched(
-            q, X, x_norm2, sigma2=delta ** 2, c2=sigma_s ** 2,
-            keys=jax.random.split(key, q.shape[0]),
-            knn_K=knn_K, knn_L=knn_L, Nsamp=M, antithetic=True)
-        return -grads
-    return -_knn_rem_score_fixed(
+    return -_knn_rem_score(
         q, X, x_norm2, sigma2=delta ** 2, c2=sigma_s ** 2,
         keys=jax.random.split(key, q.shape[0]),
         knn_K=knn_K, knn_L=knn_L, Nsamp=M, antithetic=True)

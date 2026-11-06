@@ -9,6 +9,7 @@ import sys
 import pickle
 import time
 import functools
+import argparse
 
 import numpy as np
 import jax
@@ -16,30 +17,29 @@ import jax.numpy as jnp
 from jax.scipy.special import logsumexp
 from functools import partial
 
-import ot                               # Python Optimal Transport (POT)
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.colors import TwoSlopeNorm
-import sklearn.datasets
 
 # ─────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────
 
-N_TARGET      = 20000          # proxy samples for target distribution
-N_TRAIN       = 1000           # training samples
-N_GEN         = 20000          # samples to generate per method
+N_TARGET      = 5000           # proxy samples for target distribution
+N_TRAIN       = 500            # training samples
+N_GEN         = 5000           # samples to generate per method
 N_STEPS       = 3000           # ODE steps (σ-CFDM) / Langevin steps (MM-SOLD)
 
 SCFDM_BATCH   = 500           # σ-CFDM: particles processed per JIT-batch
 
-MM_SIGMA_GMM  = 0.02          # MM-SOLD: GMM bandwidth
+MM_SIGMA_GMM  = 0.1           # MM-SOLD: GMM component std delta
 MM_H          = 5e-4          # MM-SOLD: Langevin step size
 
-M_LIST        = [2, 4, 8]
-SIGMA_LIST    = [0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.1, 0.2]
+M_LIST        = [2, 32]
+SIGMA_LIST    = [0.05, 0.1, 0.15, 0.4]  # union of Figure 2's bandwidths
+CACHE_VERSION = 2             # format version of the saved result caches
 
 # Built-in 2-D synthetic distributions (always available without mesh files)
 DATASETS_2D   = ["checkerboard", "spirals"]
@@ -399,7 +399,7 @@ def _get_mmsold_step(M: int):
             gZ             = jnp.mean(grads, axis=0)            # (B, d)
         # ─────────────────────────────────────────────────────────────────
 
-        gY_tan      = _proj_tangent(Y, gZ @ L_tgt.T)
+        gY_tan      = _proj_tangent(Y, gZ @ L_tgt)
 
         xi          = jax.random.normal(k_n, Y.shape, dtype=Y.dtype)
         xi_tan      = _proj_tangent(Y, xi)
@@ -591,7 +591,10 @@ def run_grid_search(dataset_name: str,
                     X_target:     np.ndarray,
                     M_list:       list = M_LIST,
                     sigma_list:   list = SIGMA_LIST,
-                    seed:         int  = SEED) -> dict:
+                    seed:         int  = SEED,
+                    *, n_samples: int = N_GEN, n_steps: int = N_STEPS,
+                    sigma_gmm: float = MM_SIGMA_GMM,
+                    h: float = MM_H) -> dict:
     """
     Run grid search over all (M, σ) combinations for both methods.
     """
@@ -617,7 +620,10 @@ def run_grid_search(dataset_name: str,
 
             # ── σ-CFDM ─────────────────────────────────────────────────
             t0 = time.time()
-            samp_s = scfdm_sample(X_train, sigma, M, seed=seed)
+            samp_s = scfdm_sample(X_train, sigma, M, seed=seed,
+                                  n_samples=n_samples, n_steps=n_steps)
+            if not np.isfinite(samp_s).all():
+                raise FloatingPointError(f"Nonfinite CFDM samples: {dataset_name}, M={M}, sigma={sigma}")
             print(f"    σ-CFDM  {time.time()-t0:.1f}s", flush=True)
 
             w2t  = sw2_distance(samp_s, X_target)
@@ -630,7 +636,11 @@ def run_grid_search(dataset_name: str,
 
             # ── MM-SOLD ────────────────────────────────────────────────
             t0 = time.time()
-            samp_m = mmsold_sample(X_train, sigma, M, seed=seed)
+            samp_m = mmsold_sample(X_train, sigma, M, seed=seed,
+                                   n_samples=n_samples, n_steps=n_steps,
+                                   sigma_gmm=sigma_gmm, h=h)
+            if not np.isfinite(samp_m).all():
+                raise FloatingPointError(f"Nonfinite MM-SOLD samples: {dataset_name}, M={M}, sigma={sigma}")
             print(f"    MM-SOLD {time.time()-t0:.1f}s", flush=True)
 
             w2t  = sw2_distance(samp_m, X_target)
@@ -1146,41 +1156,89 @@ def plot_scatter_all(all_results: dict, X_trains: dict):
 # 8.  Main
 # ─────────────────────────────────────────────
 
-def main():
-    os.makedirs(RESULTS_DIR, exist_ok=True)
+def main(argv=None):
+    global FIGURES_DIR
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--datasets", nargs="+", default=DATASETS_2D,
+                        help="default: checkerboard spirals; 3D names require external meshes")
+    parser.add_argument("--n-train", type=int, default=N_TRAIN)
+    parser.add_argument("--n-target", type=int, default=N_TARGET)
+    parser.add_argument("--n-samples", type=int, default=N_GEN)
+    parser.add_argument("--steps", type=int, default=N_STEPS)
+    parser.add_argument("--M", nargs="+", type=int, default=M_LIST)
+    parser.add_argument("--sigma", nargs="+", type=float, default=SIGMA_LIST)
+    parser.add_argument("--delta", type=float, default=MM_SIGMA_GMM)
+    parser.add_argument("--h", type=float, default=MM_H)
+    parser.add_argument("--seed", type=int, default=SEED)
+    parser.add_argument("--output-dir", default=None,
+                        help="parent of results/, figures/ and figures_paper_2d/")
+    parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument("--smoke-test", action="store_true",
+                        help="small end-to-end check; defaults to separate smoke_test/ output")
+    args = parser.parse_args(argv)
+    if args.smoke_test:
+        args.n_train, args.n_target, args.n_samples, args.steps = 32, 64, 64, 12
+        args.M, args.sigma = [2], [0.1]
+    if (min(args.n_train, args.n_target) < 2 or args.n_samples < 5
+            or args.steps < 2 or any(m < 1 for m in args.M)
+            or any(not np.isfinite(s) or s < 0 for s in args.sigma)
+            or not np.isfinite(args.delta) or args.delta <= 0
+            or not np.isfinite(args.h) or args.h <= 0):
+        parser.error("require sample counts >= 2 (particles >= 5), steps >= 2, M >= 1, sigma >= 0, delta,h > 0")
+    output_dir = args.output_dir or os.path.join(
+        _SCRIPT_DIR, "smoke_test" if args.smoke_test else "")
+    results_dir = os.path.join(output_dir, "results")
+    FIGURES_DIR = os.path.join(output_dir, "figures")
+    paper_dir = os.path.join(output_dir, "figures_paper_2d")
+    os.makedirs(results_dir, exist_ok=True)
     os.makedirs(FIGURES_DIR, exist_ok=True)
-    np.random.seed(SEED)
-
-    RUN_DATASETS = ["guitar"]
+    np.random.seed(args.seed)
+    config = dict(cache_version=CACHE_VERSION, n_train=args.n_train,
+                  n_target=args.n_target, n_samples=args.n_samples,
+                  n_steps=args.steps, M_list=args.M, sigma_list=args.sigma,
+                  delta=args.delta, h=args.h, seed=args.seed,
+                  data_selection="farthest-point; candidate pool = 10 * retained size",
+                  smoke_test=args.smoke_test)
+    print(f"Run settings: {config}", flush=True)
 
     print("=== Preparing datasets ===")
     X_targets: dict = {}
     X_trains:  dict = {}
-    for dname in RUN_DATASETS:
-        X_tgt = get_dataset(dname, N_TARGET, seed=SEED)
-        X_tr  = get_dataset(dname, N_TRAIN,  seed=SEED + 1)
+    for dname in args.datasets:
+        X_tgt = get_dataset(dname, args.n_target, seed=args.seed)
+        X_tr  = get_dataset(dname, args.n_train, seed=args.seed + 1)
         X_targets[dname] = X_tgt
         X_trains[dname]  = X_tr
         print(f"  {dname}: target {X_tgt.shape}, train {X_tr.shape}")
 
     # ── Grid search ──────────────────────────────────────────────────────────
     all_results: dict = {}
-    for dname in RUN_DATASETS:
-        cache_path = os.path.join(RESULTS_DIR, f"{dname}_results.pkl")
-        if os.path.exists(cache_path):
-            print(f"\n[{dname}] Loading cached results from {cache_path}")
+    for dname in args.datasets:
+        cache_path = os.path.join(results_dir, f"{dname}_results.pkl")
+        if os.path.exists(cache_path) and not args.overwrite:
             with open(cache_path, "rb") as fh:
-                all_results[dname] = pickle.load(fh)
-            continue
+                cached = pickle.load(fh)
+            if (cached.get("config") == config
+                    and cached.get("dataset") == dname
+                    and "X_train" in cached):
+                print(f"\n[{dname}] Loading matching cache: {cache_path}")
+                all_results[dname] = cached
+                X_trains[dname] = cached["X_train"]
+                continue
+            print(f"\n[{dname}] Old or incompatible cache; recomputing.")
 
         print(f"\n=== Dataset: {dname} ===")
         res = run_grid_search(
             dname, X_trains[dname], X_targets[dname],
-            M_list=M_LIST, sigma_list=SIGMA_LIST, seed=SEED,
+            M_list=args.M, sigma_list=args.sigma, seed=args.seed,
+            n_samples=args.n_samples, n_steps=args.steps,
+            sigma_gmm=args.delta, h=args.h,
         )
+        res.update(config=config, X_train=X_trains[dname], X_target=X_targets[dname])
         all_results[dname] = res
-        with open(cache_path, "wb") as fh:
+        with open(cache_path + ".tmp", "wb") as fh:
             pickle.dump(res, fh)
+        os.replace(cache_path + ".tmp", cache_path)
         print(f"  Saved → {cache_path}")
 
     # ── Per-dataset plots ────────────────────────────────────────────────────
@@ -1198,16 +1256,23 @@ def main():
     # ── Aggregate heatmaps + scatter plots (all configs) ─────────────────────
     print("\n=== Generating aggregate heatmaps & scatter plots (all configs) ===")
     top5_pct, top5_abs = plot_aggregate_heatmaps(
-        all_pct, all_abs, M_LIST, SIGMA_LIST)
+        all_pct, all_abs, args.M, args.sigma)
 
     print(f"  Top-5 (M,σ) by % change  : {top5_pct}")
     print(f"  Top-5 (M,σ) by abs change: {top5_abs}")
 
     plot_scatter_all(all_results, X_trains)
 
+    # Generate the manuscript-style panels in the same invocation.
+    from plot_2d_paper_figures import plot_results
+    for dname, res in all_results.items():
+        if not _is_3d(dname):
+            plot_results(dname, res, paper_dir)
+
     print("\n=== All done! ===")
-    print(f"  Results : {RESULTS_DIR}")
+    print(f"  Results : {results_dir}")
     print(f"  Figures : {FIGURES_DIR}")
+    print(f"  Paper panels : {paper_dir}")
 
 
 if __name__ == "__main__":

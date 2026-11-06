@@ -147,7 +147,7 @@ def _get_mmsold_step(M_mc: int):
             _, grads = jax.lax.scan(_one_noise, None, keys_m)
             gZ = jnp.mean(grads, axis=0)
 
-        gY_tan      = _proj_tangent(Y, gZ @ L_tgt.T)
+        gY_tan      = _proj_tangent(Y, gZ @ L_tgt)
         xi          = jax.random.normal(k_n, Y.shape, dtype=Y.dtype)
         xi_tan      = _proj_tangent(Y, xi)
         xi_prev_tan = _proj_tangent(Y, xi_prev)
